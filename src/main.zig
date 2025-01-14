@@ -109,7 +109,7 @@ pub fn main() !void {
     const stderr_file = std.io.getStdErr().writer();
     var bw = std.io.bufferedWriter(stdout_file);
 
-    const action = args[1];
+    const action = if (args.len > 1) args[1] else "";
     if (std.mem.eql(u8, action, "create")) {
         try ensureDirsExist();
         const fileList = try getAllFilesInADRDir(allocator);
