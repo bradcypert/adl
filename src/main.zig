@@ -6,6 +6,8 @@ const adr_contents = @embedFile("./templates/adr_template.md");
 const help_contents = @embedFile("./templates/help.txt");
 const template_readme_contents = @embedFile("./templates/readme_templates_folder.md");
 
+const Command = enum { regen, create, help, unsupported };
+
 fn compareStrings(_: void, lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs).compare(std.math.CompareOperator.lt);
 }
@@ -102,21 +104,26 @@ pub fn main() !void {
     const stderr = std.io.getStdErr().writer();
 
     const action = if (args.len > 1) args[1] else "";
-    if (std.mem.eql(u8, action, "create")) {
-        const name: []u8 = if (args.len > 2) try std.mem.join(arena_alloc, " ", args[2..]) else &.{};
-        if (name.len == 0) {
-            try stderr.print("No name supplied for the ADR.\nCommand should be: `adl create <Name of ADR here>`\n", .{});
-            return;
-        }
+    const cmd = std.meta.stringToEnum(Command, action) orelse .unsupported;
+    switch (cmd) {
+        .create => {
+            const name: []u8 = if (args.len > 2) try std.mem.join(arena_alloc, " ", args[2..]) else &.{};
+            if (name.len == 0) {
+                try stderr.print("No name supplied for the ADR.\nCommand should be: `adl create <Name of ADR here>`\n", .{});
+                return;
+            }
 
-        try establishCoreFiles();
-        const file_list = try getAllFilesInADRDir(arena_alloc);
-        try generateADR(arena_alloc, file_list.items.len, name);
-        try rebuildReadme(arena_alloc);
-    } else if (std.mem.eql(u8, action, "regen")) {
-        try establishCoreFiles();
-        try rebuildReadme(arena_alloc);
-    } else {
-        stdout.writeAll(help_contents) catch @panic("Unable to write help contents");
+            try establishCoreFiles();
+            const file_list = try getAllFilesInADRDir(arena_alloc);
+            try generateADR(arena_alloc, file_list.items.len, name);
+            try rebuildReadme(arena_alloc);
+        },
+        .regen => {
+            try establishCoreFiles();
+            try rebuildReadme(arena_alloc);
+        },
+        else => {
+            stdout.writeAll(help_contents) catch @panic("Unable to write help contents");
+        },
     }
 }
