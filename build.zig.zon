@@ -1,7 +1,7 @@
 .{
     .name = .adl,
     .version = "0.0.10",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.1",
     .fingerprint = 0xf3c1fbd5f415e3c7,
     .dependencies = .{
         .@"zig-datetime" = .{
