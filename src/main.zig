@@ -24,13 +24,13 @@ fn rebuildReadme(arena_alloc: std.mem.Allocator) !void {
     const date = try Datetime.now().formatHttp(arena_alloc);
     const output = try std.mem.replaceOwned(u8, arena_alloc, template_contents, "{{timestamp}}", date);
     const files = try getAllFilesInADRDir(arena_alloc);
-    var formatted_files = std.ArrayList(u8).init(arena_alloc);
+    var formatted_files: std.ArrayList(u8) = .empty;
 
     std.mem.sort([]const u8, files.items, {}, compareStrings);
 
     for (files.items) |str| {
         const new_str = try std.fmt.allocPrint(arena_alloc, " - [{s}](./{s})\n", .{ str, str });
-        try formatted_files.appendSlice(new_str);
+        try formatted_files.appendSlice(arena_alloc, new_str);
     }
 
     const with_contents = try std.mem.replaceOwned(u8, arena_alloc, output, "{{contents}}", formatted_files.items);
@@ -74,7 +74,7 @@ fn getAllFilesInADRDir(allocator: std.mem.Allocator) !std.ArrayList([]const u8) 
     var dir = try std.fs.cwd().openDir("./adr", .{ .iterate = true });
     defer dir.close();
 
-    var file_list = std.ArrayList([]const u8).init(allocator);
+    var file_list: std.ArrayList([]const u8) = .empty;
 
     var dir_iterator = dir.iterate();
     while (try dir_iterator.next()) |entry| {
@@ -83,7 +83,7 @@ fn getAllFilesInADRDir(allocator: std.mem.Allocator) !std.ArrayList([]const u8) 
             !std.mem.eql(u8, entry.name, "templates"))
         {
             const file_name = try allocator.dupe(u8, entry.name);
-            try file_list.append(file_name);
+            try file_list.append(allocator, file_name);
         }
     }
 
@@ -100,8 +100,14 @@ pub fn main() !void {
     const arena_alloc = arena.allocator();
 
     var args = try std.process.argsAlloc(arena_alloc);
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stderr_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    const stdout = &stdout_writer.interface;
+    const stderr = &stderr_writer.interface;
+    defer stdout.flush() catch {};
+    defer stderr.flush() catch {};
 
     const action = if (args.len > 1) args[1] else "";
     const cmd = std.meta.stringToEnum(Command, action) orelse .unsupported;

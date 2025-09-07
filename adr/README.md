@@ -14,4 +14,5 @@ If you need to regenerate this readme without creating a new ADR, please use \`a
  - [00002-Migrate-to-Zig.md](./00002-Migrate-to-Zig.md)
  - [00003-Support-Templates-Folder.md](./00003-Support-Templates-Folder.md)
 
-Last generated Fri, 23 May 2025 18:56:25 UTC
+
+Last generated Sun, 7 Sep 2025 16:22:03 UTC
