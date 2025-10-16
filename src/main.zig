@@ -106,8 +106,6 @@ pub fn main() !void {
     var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
     const stdout = &stdout_writer.interface;
     const stderr = &stderr_writer.interface;
-    defer stdout.flush() catch {};
-    defer stderr.flush() catch {};
 
     const action = if (args.len > 1) args[1] else "";
     const cmd = std.meta.stringToEnum(Command, action) orelse .unsupported;
@@ -132,4 +130,7 @@ pub fn main() !void {
             stdout.writeAll(help_contents) catch @panic("Unable to write help contents");
         },
     }
+
+		try stdout.flush();
+    try stderr.flush();
 }
