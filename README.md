@@ -1,6 +1,6 @@
 # ADL
 
-adl (pronounce "Addle") is a tool for managing ADRs (architecture decision records) in a directory (ideally inside of a repo).
+adl (pronounced "Addle") is a tool for managing ADRs (architecture decision records) in a directory (ideally inside of a repo).
 
 adl helps generate markdown files for capturing information in an ADR and generates a README in your `adr` directory to help catalogue everything. The README also provides information on how to use `adl` to manage your `adr`s.
 
