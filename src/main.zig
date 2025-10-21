@@ -131,6 +131,6 @@ pub fn main() !void {
         },
     }
 
-		try stdout.flush();
+	try stdout.flush();
     try stderr.flush();
 }
