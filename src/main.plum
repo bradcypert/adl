@@ -1,0 +1,232 @@
+// adl -- manage Architecture Decision Records.
+//
+// A port of src/main.zig. Same commands, same files, same output.
+//
+// Build: plum build plum -o adl
+// Run:   plum run plum create My New Decision
+
+// --- Templates ---
+//
+// Zig used `@embedFile` to pull these in from src/templates/. Plum has
+// no equivalent, so they are string constants. `Array.join` with "\n"
+// keeps them readable as line lists rather than one escaped blob.
+
+let adr_template (): String = Array.join([
+    "# {{name}}",
+    "",
+    "## Abstract",
+    "",
+    "## Context and Problem Statement",
+    "",
+    "## Considered Options",
+    "",
+    "## Decision Outcome",
+    "",
+    "<!-- Add additional information here, comparison of options, research, etc -->",
+], "\n")
+
+let readme_template (): String = Array.join([
+    "# Architecture Decision Records",
+    "    ",
+    "This directory captures architecture decision records for this project.",
+    "An architecture decision record is a justified software design choice ",
+    "that addresses a functional or non-functional requirement of architectural significance.",
+    "",
+    "This directory and README is managed by [adl](https://github.com/bradcypert/adl). Please use `adl create` to create a new ADR.",
+    "If you need to regenerate this readme without creating a new ADR, please use `adl regen`.",
+    "",
+    "## Contents ",
+    "",
+    "{{contents}}",
+    "",
+    "Last generated {{timestamp}}",
+], "\n")
+
+let templates_folder_readme (): String = Array.join([
+    "# Templates and the Template Folder",
+    "",
+    "The templates contained in this template folder will be used",
+    "if they are defined. If they are not defined, we will default",
+    "to the embedded templates used by the CLI.",
+    "",
+    "This gives you the ability to customize your ADRs and READMEs",
+    "to meet your personal or team needs.",
+    "",
+    "## Supported Template Filenames",
+    "",
+    "### template_readme.md",
+    "This template is used to generate the README in the ADR folder.",
+    "It supports the following items.",
+    "",
+    "| Field                 | Purpose        |",
+    "|-----------------------|--------------------------------------------------------------------------------|",
+    "| {{timestamp}}         | The timestamp at which the README was last generated|",
+    "| {{contents}}          | The contents of the ADR folder, structured as an ordered list, sorted by name. |",
+    "",
+    "### template_adr.md",
+    "This template is used to generate a specific ADR.",
+    "It supports the following items:",
+    "",
+    "| Field                | Purpose|",
+    "|-----------------------|-------------------------------|",
+    "| {{name}}              | The name of the generated ADR |",
+], "\n")
+
+let help_text (): String = Array.join([
+    "adl",
+    "Manage your Architecture Reference Diagrams with ease.",
+    "",
+    "help menu",
+    "",
+    "supported arguments",
+    "",
+    "create - adl create my-new-adr-name",
+    "  create a new ADR",
+    "",
+    "regen - adl regen",
+    "  regenerate the ADR README",
+], "\n")
+
+// --- Files ---
+
+// A missing file is not an error here, it means "use the built-in
+// template". `read_file` reports both cases as `Err`, which is the
+// right shape for a reader that cares why; this one does not.
+let template_or (path: String) (fallback: String): String =
+    match read_file(path) { Ok(contents) => contents, Err(_) => fallback }
+
+// Everything in ./adr that is an ADR: not the generated README, not
+// the two directories the tool manages itself.
+let adr_files (): Array[String] =
+    match list_dir("./adr") {
+        Err(_) => [],
+        Ok(entries) => Array.filter(entries, |e| is_adr_entry(e)),
+    }
+
+let is_adr_entry (name: String): Bool =
+    name != "README.md" && name != "assets" && name != "templates"
+
+// `Os.make_dir` creates ONE directory, so the parent is created first.
+// Zig's `makePath` is recursive and did this in one call.
+let establish_core_files (): Result[Unit, String] = {
+    let _ = Os.make_dir("./adr");
+    let _ = Os.make_dir("./adr/assets");
+    let _ = Os.make_dir("./adr/templates");
+    write_file("./adr/templates/README.md", templates_folder_readme())
+}
+
+// --- Time ---
+//
+// Zig had `Datetime.now().formatHttp()` from a package. Plum's stdlib
+// stops at `Time.now()` -- seconds since the epoch -- so the calendar
+// arithmetic lives here. That is the right split: the clock is the part
+// a program cannot compute for itself, the calendar is the part it can.
+//
+// Output is an RFC 7231 IMF-fixdate, the same shape `formatHttp`
+// produced: `Thu, 26 Aug 2026 20:12:02 GMT`.
+
+let weekday_names (): Array[String] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+let month_names (): Array[String] =
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+struct Civil { year: Int, month: Int, day: Int }
+
+// Howard Hinnant's `civil_from_days`, which is exact for every date in
+// the proleptic Gregorian calendar and needs no lookup table and no
+// leap-year special case -- it shifts the year to start in March so
+// that the leap day lands at the END of the cycle.
+let civil_from_days (days: Int): Civil = {
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    Civil { year: yoe + era * 400 + (if m <= 2 { 1 } else { 0 }), month: m, day: d }
+}
+
+let two (n: Int): String = pad_left(n.to_string(), 2)
+
+let timestamp (): String = {
+    let epoch = Time.now();
+    let days = epoch / 86400;
+    let secs = epoch - days * 86400;
+    let c = civil_from_days(days);
+    // 1970-01-01 was a Thursday, which is index 4.
+    let dow = weekday_names()[(days + 4) - ((days + 4) / 7) * 7];
+    dow.concat(", ").concat(two(c.day)).concat(" ").concat(month_names()[c.month - 1])
+        .concat(" ").concat(c.year.to_string()).concat(" ")
+        .concat(two(secs / 3600)).concat(":").concat(two((secs / 60) - (secs / 3600) * 60))
+        .concat(":").concat(two(secs - (secs / 60) * 60)).concat(" GMT")
+}
+
+// --- Rendering ---
+
+let entry_line (f: String): String =
+    " - [".concat(f).concat("](./").concat(f).concat(")\n")
+
+let rebuild_readme (): Result[Unit, String] = {
+    let template = template_or("./adr/templates/template_readme.md", readme_template());
+    let listing = Array.join(Array.map(Array.sort_string(adr_files()), |f| entry_line(f)), "");
+    let dated = String.replace(template, "{{timestamp}}", timestamp());
+    write_file("./adr/README.md", String.replace(dated, "{{contents}}", listing))
+}
+
+let pad5 (n: Int): String = pad_left(n.to_string(), 5)
+
+let pad_left (s: String) (width: Int): String =
+    if s.len() >= width { s } else { pad_left("0".concat(s), width) }
+
+// Characters a filename cannot portably hold. Zig walked the string
+// mutating bytes in place; a fold over the replacements says the same
+// thing without a mutable buffer.
+//
+// NOTE: this differs from the Zig original, which has a bug here. It
+// duplicated `name` into `safe_name` BEFORE the sanitising loop, then
+// mutated `name`, then built the filename from the untouched
+// `safe_name` -- so the sanitising never reached the output. Ported as
+// intended rather than as written.
+let sanitize (name: String): String =
+    Array.fold(["/", "\\", ":", "*", "?", "\"", "<", ">", "|"], name,
+        |acc, ch| String.replace(acc, ch, " "))
+
+let generate_adr (n: Int) (name: String): Result[Unit, String] = {
+    let padded = pad5(n);
+    let template = template_or("./adr/templates/template_adr.md", adr_template());
+    let contents = String.replace(template, "{{name}}", padded.concat(" - ").concat(name));
+    write_file("./adr/".concat(padded).concat("-").concat(sanitize(name)).concat(".md"), contents)
+}
+
+// --- Commands ---
+
+let report (r: Result[Unit, String]): Unit =
+    match r { Ok(_) => (), Err(e) => println("adl: ".concat(e)) }
+
+let cmd_create (name: String): Unit =
+    if name.len() == 0 {
+        println("No name supplied for the ADR.")
+        ; println("Command should be: `adl create <Name of ADR here>`")
+    } else {
+        report(establish_core_files());
+        report(generate_adr(adr_files().len(), name));
+        report(rebuild_readme())
+    }
+
+let cmd_regen (): Unit = {
+    report(establish_core_files());
+    report(rebuild_readme())
+}
+
+let main (): Unit = {
+    let argv = args();
+    let action = if argv.len() > 0 { argv[0] } else { "" };
+    if action == "create" {
+        cmd_create(Array.join(Array.slice(argv, 1, argv.len()), " "))
+    } else if action == "regen" {
+        cmd_regen()
+    } else {
+        println(help_text())
+    }
+}
