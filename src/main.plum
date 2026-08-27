@@ -8,84 +8,77 @@
 // --- Templates ---
 //
 // Zig used `@embedFile` to pull these in from src/templates/. Plum has
-// no equivalent, so they are string constants. `Array.join` with "\n"
-// keeps them readable as line lists rather than one escaped blob.
+// no equivalent, so they are string constants -- written as ordinary
+// multiline literals, which means the template text reads exactly as it
+// will be written out.
 
-let adr_template (): String = Array.join([
-    "# {{name}}",
-    "",
-    "## Abstract",
-    "",
-    "## Context and Problem Statement",
-    "",
-    "## Considered Options",
-    "",
-    "## Decision Outcome",
-    "",
-    "<!-- Add additional information here, comparison of options, research, etc -->",
-], "\n")
+let adr_template (): String = "# {{name}}
 
-let readme_template (): String = Array.join([
-    "# Architecture Decision Records",
-    "    ",
-    "This directory captures architecture decision records for this project.",
-    "An architecture decision record is a justified software design choice ",
-    "that addresses a functional or non-functional requirement of architectural significance.",
-    "",
-    "This directory and README is managed by [adl](https://github.com/bradcypert/adl). Please use `adl create` to create a new ADR.",
-    "If you need to regenerate this readme without creating a new ADR, please use `adl regen`.",
-    "",
-    "## Contents ",
-    "",
-    "{{contents}}",
-    "",
-    "Last generated {{timestamp}}",
-], "\n")
+## Abstract
 
-let templates_folder_readme (): String = Array.join([
-    "# Templates and the Template Folder",
-    "",
-    "The templates contained in this template folder will be used",
-    "if they are defined. If they are not defined, we will default",
-    "to the embedded templates used by the CLI.",
-    "",
-    "This gives you the ability to customize your ADRs and READMEs",
-    "to meet your personal or team needs.",
-    "",
-    "## Supported Template Filenames",
-    "",
-    "### template_readme.md",
-    "This template is used to generate the README in the ADR folder.",
-    "It supports the following items.",
-    "",
-    "| Field                 | Purpose        |",
-    "|-----------------------|--------------------------------------------------------------------------------|",
-    "| {{timestamp}}         | The timestamp at which the README was last generated|",
-    "| {{contents}}          | The contents of the ADR folder, structured as an ordered list, sorted by name. |",
-    "",
-    "### template_adr.md",
-    "This template is used to generate a specific ADR.",
-    "It supports the following items:",
-    "",
-    "| Field                | Purpose|",
-    "|-----------------------|-------------------------------|",
-    "| {{name}}              | The name of the generated ADR |",
-], "\n")
+## Context and Problem Statement
 
-let help_text (): String = Array.join([
-    "adl",
-    "Manage your Architecture Reference Diagrams with ease.",
-    "",
-    "help menu",
-    "",
-    "supported arguments",
-    "",
-    "create - adl create my-new-adr-name",
-    "  create a new ADR",
-    "",
-    "regen - adl regen",
-    "  regenerate the ADR README",
-], "\n")
+## Considered Options
+
+## Decision Outcome
+
+<!-- Add additional information here, comparison of options, research, etc -->"
+
+let readme_template (): String = "# Architecture Decision Records
+    
+This directory captures architecture decision records for this project.
+An architecture decision record is a justified software design choice 
+that addresses a functional or non-functional requirement of architectural significance.
+
+This directory and README is managed by [adl](https://github.com/bradcypert/adl). Please use `adl create` to create a new ADR.
+If you need to regenerate this readme without creating a new ADR, please use `adl regen`.
+
+## Contents 
+
+{{contents}}
+
+Last generated {{timestamp}}"
+
+let templates_folder_readme (): String = "# Templates and the Template Folder
+
+The templates contained in this template folder will be used
+if they are defined. If they are not defined, we will default
+to the embedded templates used by the CLI.
+
+This gives you the ability to customize your ADRs and READMEs
+to meet your personal or team needs.
+
+## Supported Template Filenames
+
+### template_readme.md
+This template is used to generate the README in the ADR folder.
+It supports the following items.
+
+| Field                 | Purpose        |
+|-----------------------|--------------------------------------------------------------------------------|
+| {{timestamp}}         | The timestamp at which the README was last generated|
+| {{contents}}          | The contents of the ADR folder, structured as an ordered list, sorted by name. |
+
+### template_adr.md
+This template is used to generate a specific ADR.
+It supports the following items:
+
+| Field                | Purpose|
+|-----------------------|-------------------------------|
+| {{name}}              | The name of the generated ADR |"
+
+let help_text (): String = "adl
+Manage your Architecture Reference Diagrams with ease.
+
+help menu
+
+supported arguments
+
+create - adl create my-new-adr-name
+  create a new ADR
+
+regen - adl regen
+  regenerate the ADR README"
 
 // --- Files ---
 
@@ -156,22 +149,26 @@ let timestamp (): String = {
     let c = civil_from_days(days);
     // 1970-01-01 was a Thursday, which is index 4.
     let dow = weekday_names()[(days + 4) - ((days + 4) / 7) * 7];
-    dow.concat(", ").concat(two(c.day)).concat(" ").concat(month_names()[c.month - 1])
-        .concat(" ").concat(c.year.to_string()).concat(" ")
-        .concat(two(secs / 3600)).concat(":").concat(two((secs / 60) - (secs / 3600) * 60))
-        .concat(":").concat(two(secs - (secs / 60) * 60)).concat(" GMT")
+    let month = month_names()[c.month - 1];
+    let hh = two(secs / 3600);
+    let mm = two((secs / 60) - (secs / 3600) * 60);
+    let ss = two(secs - (secs / 60) * 60);
+    "${dow}, ${two(c.day)} ${month} ${c.year} ${hh}:${mm}:${ss} GMT"
 }
 
 // --- Rendering ---
 
-let entry_line (f: String): String =
-    " - [".concat(f).concat("](./").concat(f).concat(")\n")
+let entry_line (f: String): String = " - [${f}](./${f})\n"
 
 let rebuild_readme (): Result[Unit, String] = {
-    let template = template_or("./adr/templates/template_readme.md", readme_template());
-    let listing = Array.join(Array.map(Array.sort_string(adr_files()), |f| entry_line(f)), "");
-    let dated = String.replace(template, "{{timestamp}}", timestamp());
-    write_file("./adr/README.md", String.replace(dated, "{{contents}}", listing))
+    let listing = adr_files()
+        |> Array.sort_string
+        |> Array.map(_, |f| entry_line(f))
+        |> Array.join(_, "");
+    template_or("./adr/templates/template_readme.md", readme_template())
+        |> String.replace(_, "{{timestamp}}", timestamp())
+        |> String.replace(_, "{{contents}}", listing)
+        |> write_file("./adr/README.md")
 }
 
 let pad5 (n: Int): String = pad_left(n.to_string(), 5)
@@ -194,20 +191,20 @@ let sanitize (name: String): String =
 
 let generate_adr (n: Int) (name: String): Result[Unit, String] = {
     let padded = pad5(n);
-    let template = template_or("./adr/templates/template_adr.md", adr_template());
-    let contents = String.replace(template, "{{name}}", padded.concat(" - ").concat(name));
-    write_file("./adr/".concat(padded).concat("-").concat(sanitize(name)).concat(".md"), contents)
+    template_or("./adr/templates/template_adr.md", adr_template())
+        |> String.replace(_, "{{name}}", "${padded} - ${name}")
+        |> write_file("./adr/${padded}-${sanitize(name)}.md")
 }
 
 // --- Commands ---
 
 let report (r: Result[Unit, String]): Unit =
-    match r { Ok(_) => (), Err(e) => println("adl: ".concat(e)) }
+    match r { Ok(_) => (), Err(e) => println("adl: ${e}") }
 
 let cmd_create (name: String): Unit =
     if name.len() == 0 {
-        println("No name supplied for the ADR.")
-        ; println("Command should be: `adl create <Name of ADR here>`")
+        println("No name supplied for the ADR.");
+        println("Command should be: `adl create <Name of ADR here>`")
     } else {
         report(establish_core_files());
         report(generate_adr(adr_files().len(), name));
