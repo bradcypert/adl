@@ -1,0 +1,12 @@
+adl
+Manage your Architecture Reference Diagrams with ease.
+
+help menu
+
+supported arguments
+
+create - adl create my-new-adr-name
+  create a new ADR
+
+regen - adl regen
+  regenerate the ADR README

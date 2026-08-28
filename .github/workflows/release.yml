@@ -16,41 +16,90 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v3
 
+      # Zig is here as a C DRIVER, not as a compiler for this project.
+      # Plum emits target-neutral LLVM IR and shells out to a C compiler
+      # to assemble and link it; plain clang can emit code for any
+      # target but cannot LINK one without that target's libc, and Plum
+      # ships no sysroot. `zig cc` has one for every target below, which
+      # is what `PLUM_CC` exists to let you point at.
       - name: Install Zig
         uses: mlugg/setup-zig@v2
         with:
           version: 0.15.1
 
-      - name: Build Windows 
-        run: "zig build -Dtarget=x86_64-windows -Doptimize=ReleaseSafe -Dexe_name=adl_windows_x86"
+      # PINNED, not "latest": this workflow produces the artifacts people
+      # download, so which compiler built them should be a decision in
+      # this file rather than whatever happened to be released that day.
+      # Bump it deliberately.
+      - name: Install Plum
+        env:
+          PLUM_VERSION: v0.0.10
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/bradcypert/plum/main/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Build Mac_x86 
-        run: "zig build -Dtarget=x86_64-macos -Doptimize=ReleaseSafe -Dexe_name=adl_mac_x86"
+      - name: Show versions
+        run: |
+          plum version
+          zig version
 
-      - name: Build Mac_ARM 
-        run: "zig build -Dtarget=aarch64-macos -Doptimize=ReleaseSafe -Dexe_name=adl_mac_arm"
+      # One runner, five targets, from one source tree. Triples are
+      # passed through to the C driver, so these are clang/zig triples.
+      - name: Build
+        env:
+          PLUM_CC: zig cc
+        run: |
+          mkdir -p dist
+          plum build src -o dist/adl_linux_x86   --target x86_64-linux-musl
+          plum build src -o dist/adl_linux_arm   --target aarch64-linux-musl
+          plum build src -o dist/adl_mac_x86     --target x86_64-macos
+          plum build src -o dist/adl_mac_arm     --target aarch64-macos
+          plum build src -o dist/adl_windows_x86.exe --target x86_64-windows-gnu
 
-      - name: Build Linux_x86 
-        run: "zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe -Dexe_name=adl_linux_x86"
+      # A cross-linked binary is one no machine has ever executed, so
+      # the object format is checked rather than assumed: a build that
+      # silently ignored `--target` would produce five ELF x86-64 files
+      # and a green tick.
+      - name: Check object formats
+        run: |
+          set -e
+          check() { file -b "$1" | grep -q "$2" || { echo "FAIL $1: wanted /$2/, got: $(file -b "$1")"; exit 1; }; }
+          check dist/adl_linux_x86        "ELF 64-bit.*x86-64"
+          check dist/adl_linux_arm        "ELF 64-bit.*aarch64"
+          check dist/adl_mac_x86          "Mach-O 64-bit x86_64"
+          check dist/adl_mac_arm          "Mach-O 64-bit arm64"
+          check dist/adl_windows_x86.exe  "PE32+"
+          echo "all five have the object format they claim"
 
-      - name: Build Linux_ARM
-        run: "zig build -Dtarget=aarch64-linux -Doptimize=ReleaseSafe -Dexe_name=adl_linux_arm"
+      # ...and one of them is actually RUN. aarch64-linux is the only
+      # target this runner can execute, via qemu, and running it end to
+      # end is worth more than five format checks: it proves the
+      # produced binary works, not merely that it links.
+      - name: Smoke-test the ARM64 binary under qemu
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user > /dev/null
+          work="$(mktemp -d)"; cd "$work"
+          qemu-aarch64 "$GITHUB_WORKSPACE/dist/adl_linux_arm" create "CI Smoke Test"
+          test -f "./adr/00000-CI Smoke Test.md" || { echo "FAIL: adl did not write the ADR"; exit 1; }
+          grep -q "CI Smoke Test" "./adr/README.md" || { echo "FAIL: README was not regenerated"; exit 1; }
+          echo "arm64 binary created an ADR and regenerated the README"
 
       - name: Generate Checksums
         run: |
-          cd ./zig-out/bin
+          cd dist
           sha256sum adl_windows_x86.exe adl_mac_x86 adl_mac_arm adl_linux_x86 adl_linux_arm > checksums.txt
+          cat checksums.txt
 
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            ./zig-out/bin/adl_windows_x86.exe
-            ./zig-out/bin/adl_mac_x86
-            ./zig-out/bin/adl_mac_arm
-            ./zig-out/bin/adl_linux_x86
-            ./zig-out/bin/adl_linux_arm
-            ./zig-out/bin/checksums.txt
+            ./dist/adl_windows_x86.exe
+            ./dist/adl_mac_x86
+            ./dist/adl_mac_arm
+            ./dist/adl_linux_x86
+            ./dist/adl_linux_arm
+            ./dist/checksums.txt
             LICENSE
-

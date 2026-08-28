@@ -5,80 +5,23 @@
 // Build: plum build plum -o adl
 // Run:   plum run plum create My New Decision
 
+use Os;
+use Time;
+
 // --- Templates ---
 //
-// Zig used `@embedFile` to pull these in from src/templates/. Plum has
-// no equivalent, so they are string constants -- written as ordinary
-// multiline literals, which means the template text reads exactly as it
-// will be written out.
+// `@embed_file` reads these at COMPILE time and substitutes the text, so
+// the binary is still self-contained -- there is nothing to install
+// beside it -- but the templates live as the files they are, editable
+// and diffable, rather than as string literals wedged into the source.
+//
+// This is what Zig used `@embedFile` for. Plum gained the equivalent in
+// 0.0.8, and this port is why.
 
-let adr_template (): String = "# {{name}}
-
-## Abstract
-
-## Context and Problem Statement
-
-## Considered Options
-
-## Decision Outcome
-
-<!-- Add additional information here, comparison of options, research, etc -->"
-
-let readme_template (): String = "# Architecture Decision Records
-    
-This directory captures architecture decision records for this project.
-An architecture decision record is a justified software design choice 
-that addresses a functional or non-functional requirement of architectural significance.
-
-This directory and README is managed by [adl](https://github.com/bradcypert/adl). Please use `adl create` to create a new ADR.
-If you need to regenerate this readme without creating a new ADR, please use `adl regen`.
-
-## Contents 
-
-{{contents}}
-
-Last generated {{timestamp}}"
-
-let templates_folder_readme (): String = "# Templates and the Template Folder
-
-The templates contained in this template folder will be used
-if they are defined. If they are not defined, we will default
-to the embedded templates used by the CLI.
-
-This gives you the ability to customize your ADRs and READMEs
-to meet your personal or team needs.
-
-## Supported Template Filenames
-
-### template_readme.md
-This template is used to generate the README in the ADR folder.
-It supports the following items.
-
-| Field                 | Purpose        |
-|-----------------------|--------------------------------------------------------------------------------|
-| {{timestamp}}         | The timestamp at which the README was last generated|
-| {{contents}}          | The contents of the ADR folder, structured as an ordered list, sorted by name. |
-
-### template_adr.md
-This template is used to generate a specific ADR.
-It supports the following items:
-
-| Field                | Purpose|
-|-----------------------|-------------------------------|
-| {{name}}              | The name of the generated ADR |"
-
-let help_text (): String = "adl
-Manage your Architecture Reference Diagrams with ease.
-
-help menu
-
-supported arguments
-
-create - adl create my-new-adr-name
-  create a new ADR
-
-regen - adl regen
-  regenerate the ADR README"
+let adr_template (): String = @embed_file("templates/adr.md")
+let readme_template (): String = @embed_file("templates/readme.md")
+let templates_folder_readme (): String = @embed_file("templates/templates_readme.md")
+let help_text (): String = @embed_file("templates/help.txt")
 
 // --- Files ---
 
@@ -86,12 +29,12 @@ regen - adl regen
 // template". `read_file` reports both cases as `Err`, which is the
 // right shape for a reader that cares why; this one does not.
 let template_or (path: String) (fallback: String): String =
-    match read_file(path) { Ok(contents) => contents, Err(_) => fallback }
+    match Os.read_file(path) { Ok(contents) => contents, Err(_) => fallback }
 
 // Everything in ./adr that is an ADR: not the generated README, not
 // the two directories the tool manages itself.
 let adr_files (): Array[String] =
-    match list_dir("./adr") {
+    match Os.list_dir("./adr") {
         Err(_) => [],
         Ok(entries) => Array.filter(entries, |e| is_adr_entry(e)),
     }
@@ -105,56 +48,15 @@ let establish_core_files (): Result[Unit, String] = {
     let _ = Os.make_dir("./adr");
     let _ = Os.make_dir("./adr/assets");
     let _ = Os.make_dir("./adr/templates");
-    write_file("./adr/templates/README.md", templates_folder_readme())
+    Os.write_file("./adr/templates/README.md", templates_folder_readme())
 }
 
 // --- Time ---
 //
-// Zig had `Datetime.now().formatHttp()` from a package. Plum's stdlib
-// stops at `Time.now()` -- seconds since the epoch -- so the calendar
-// arithmetic lives here. That is the right split: the clock is the part
-// a program cannot compute for itself, the calendar is the part it can.
-//
-// Output is an RFC 7231 IMF-fixdate, the same shape `formatHttp`
-// produced: `Thu, 26 Aug 2026 20:12:02 GMT`.
-
-let weekday_names (): Array[String] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-let month_names (): Array[String] =
-    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-
-struct Civil { year: Int, month: Int, day: Int }
-
-// Howard Hinnant's `civil_from_days`, which is exact for every date in
-// the proleptic Gregorian calendar and needs no lookup table and no
-// leap-year special case -- it shifts the year to start in March so
-// that the leap day lands at the END of the cycle.
-let civil_from_days (days: Int): Civil = {
-    let z = days + 719468;
-    let era = z / 146097;
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    Civil { year: yoe + era * 400 + (if m <= 2 { 1 } else { 0 }), month: m, day: d }
-}
-
-let two (n: Int): String = pad_left(n.to_string(), 2)
-
-let timestamp (): String = {
-    let epoch = Time.now();
-    let days = epoch / 86400;
-    let secs = epoch - days * 86400;
-    let c = civil_from_days(days);
-    // 1970-01-01 was a Thursday, which is index 4.
-    let dow = weekday_names()[(days + 4) - ((days + 4) / 7) * 7];
-    let month = month_names()[c.month - 1];
-    let hh = two(secs / 3600);
-    let mm = two((secs / 60) - (secs / 3600) * 60);
-    let ss = two(secs - (secs / 60) * 60);
-    "${dow}, ${two(c.day)} ${month} ${c.year} ${hh}:${mm}:${ss} GMT"
-}
+// Zig had `Datetime.now().formatHttp()` from a package. This port
+// carried 40 lines of Howard Hinnant's `civil_from_days` instead --
+// which is exactly the argument for putting it in the standard
+// library, and Plum 0.0.8 did.
 
 // --- Rendering ---
 
@@ -166,15 +68,12 @@ let rebuild_readme (): Result[Unit, String] = {
         |> Array.map(_, |f| entry_line(f))
         |> Array.join(_, "");
     template_or("./adr/templates/template_readme.md", readme_template())
-        |> String.replace(_, "{{timestamp}}", timestamp())
+        |> String.replace(_, "{{timestamp}}", Time.rfc7231(Time.now()))
         |> String.replace(_, "{{contents}}", listing)
-        |> write_file("./adr/README.md")
+        |> Os.write_file("./adr/README.md")
 }
 
-let pad5 (n: Int): String = pad_left(n.to_string(), 5)
-
-let pad_left (s: String) (width: Int): String =
-    if s.len() >= width { s } else { pad_left("0".concat(s), width) }
+let pad5 (n: Int): String = String.pad_left(n.to_string(), 5, "0")
 
 // Characters a filename cannot portably hold. Zig walked the string
 // mutating bytes in place; a fold over the replacements says the same
@@ -193,7 +92,7 @@ let generate_adr (n: Int) (name: String): Result[Unit, String] = {
     let padded = pad5(n);
     template_or("./adr/templates/template_adr.md", adr_template())
         |> String.replace(_, "{{name}}", "${padded} - ${name}")
-        |> write_file("./adr/${padded}-${sanitize(name)}.md")
+        |> Os.write_file("./adr/${padded}-${sanitize(name)}.md")
 }
 
 // --- Commands ---
