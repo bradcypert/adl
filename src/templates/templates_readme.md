@@ -25,4 +25,3 @@ It supports the following items:
 | Field                | Purpose|
 |-----------------------|-------------------------------|
 | {{name}}              | The name of the generated ADR |
-

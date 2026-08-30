@@ -1,4 +1,6 @@
 adl
 
+# Left by the Zig build; safe to delete.
 .zig-cache/
 zig-out/
+zig-pkg/

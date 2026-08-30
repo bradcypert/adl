@@ -1,0 +1,84 @@
+// Build: plum build plum -o adl
+// Run:   plum run plum create My New Decision
+use Os;
+use Time;
+
+let adr_template (): String = @embed_file("templates/adr.md")
+let readme_template (): String = @embed_file("templates/readme.md")
+let templates_folder_readme (): String = @embed_file("templates/templates_readme.md")
+let help_text (): String = @embed_file("templates/help.txt")
+
+let template_or (path: String) (fallback: String): String =
+    match Os.read_file(path) { Ok(contents) => contents, Err(_) => fallback }
+
+let adr_files (): Array[String] =
+    match Os.list_dir("./adr") {
+        Err(_) => [],
+        Ok(entries) => Array.filter(entries, |e| is_adr_entry(e)),
+    }
+
+let is_adr_entry (name: String): Bool =
+    name != "README.md" && name != "assets" && name != "templates"
+
+let establish_core_files (): Result[Unit, String] = {
+    let _ = Os.make_dir("./adr");
+    let _ = Os.make_dir("./adr/assets");
+    let _ = Os.make_dir("./adr/templates");
+    Os.write_file("./adr/templates/README.md", templates_folder_readme())
+}
+
+let entry_line (f: String): String = " - [${f}](./${f})\n"
+
+let rebuild_readme (): Result[Unit, String] = {
+    let listing = adr_files()
+        |> Array.sort_string
+        |> Array.map(_, |f| entry_line(f))
+        |> Array.join(_, "");
+    template_or("./adr/templates/template_readme.md", readme_template())
+        |> String.replace(_, "{{timestamp}}", Time.rfc7231(Time.now()))
+        |> String.replace(_, "{{contents}}", listing)
+        |> Os.write_file("./adr/README.md")
+}
+
+let pad5 (n: Int): String = String.pad_left(n.to_string(), 5, "0")
+
+let sanitize (name: String): String =
+    Array.fold(["/", "\\", ":", "*", "?", "\"", "<", ">", "|"], name,
+        |acc, ch| String.replace(acc, ch, " "))
+
+let generate_adr (n: Int) (name: String): Result[Unit, String] = {
+    let padded = pad5(n);
+    template_or("./adr/templates/template_adr.md", adr_template())
+        |> String.replace(_, "{{name}}", "${padded} - ${name}")
+        |> Os.write_file("./adr/${padded}-${sanitize(name)}.md")
+}
+
+let report (r: Result[Unit, String]): Unit =
+    match r { Ok(_) => (), Err(e) => println("adl: ${e}") }
+
+let cmd_create (name: String): Unit =
+    if name.len() == 0 {
+        println("No name supplied for the ADR.");
+        println("Command should be: `adl create <Name of ADR here>`")
+    } else {
+        report(establish_core_files());
+        report(generate_adr(adr_files().len(), name));
+        report(rebuild_readme())
+    }
+
+let cmd_regen (): Unit = {
+    report(establish_core_files());
+    report(rebuild_readme())
+}
+
+let main (): Unit = {
+    let argv = args();
+    let action = if argv.len() > 0 { argv[0] } else { "" };
+    if action == "create" {
+        cmd_create(Array.join(Array.slice(argv, 1, argv.len()), " "))
+    } else if action == "regen" {
+        cmd_regen()
+    } else {
+        println(help_text())
+    }
+}
