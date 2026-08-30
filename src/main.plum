@@ -1,38 +1,16 @@
-// adl -- manage Architecture Decision Records.
-//
-// A port of src/main.zig. Same commands, same files, same output.
-//
 // Build: plum build plum -o adl
 // Run:   plum run plum create My New Decision
-
 use Os;
 use Time;
-
-// --- Templates ---
-//
-// `@embed_file` reads these at COMPILE time and substitutes the text, so
-// the binary is still self-contained -- there is nothing to install
-// beside it -- but the templates live as the files they are, editable
-// and diffable, rather than as string literals wedged into the source.
-//
-// This is what Zig used `@embedFile` for. Plum gained the equivalent in
-// 0.0.8, and this port is why.
 
 let adr_template (): String = @embed_file("templates/adr.md")
 let readme_template (): String = @embed_file("templates/readme.md")
 let templates_folder_readme (): String = @embed_file("templates/templates_readme.md")
 let help_text (): String = @embed_file("templates/help.txt")
 
-// --- Files ---
-
-// A missing file is not an error here, it means "use the built-in
-// template". `read_file` reports both cases as `Err`, which is the
-// right shape for a reader that cares why; this one does not.
 let template_or (path: String) (fallback: String): String =
     match Os.read_file(path) { Ok(contents) => contents, Err(_) => fallback }
 
-// Everything in ./adr that is an ADR: not the generated README, not
-// the two directories the tool manages itself.
 let adr_files (): Array[String] =
     match Os.list_dir("./adr") {
         Err(_) => [],
@@ -42,23 +20,12 @@ let adr_files (): Array[String] =
 let is_adr_entry (name: String): Bool =
     name != "README.md" && name != "assets" && name != "templates"
 
-// `Os.make_dir` creates ONE directory, so the parent is created first.
-// Zig's `makePath` is recursive and did this in one call.
 let establish_core_files (): Result[Unit, String] = {
     let _ = Os.make_dir("./adr");
     let _ = Os.make_dir("./adr/assets");
     let _ = Os.make_dir("./adr/templates");
     Os.write_file("./adr/templates/README.md", templates_folder_readme())
 }
-
-// --- Time ---
-//
-// Zig had `Datetime.now().formatHttp()` from a package. This port
-// carried 40 lines of Howard Hinnant's `civil_from_days` instead --
-// which is exactly the argument for putting it in the standard
-// library, and Plum 0.0.8 did.
-
-// --- Rendering ---
 
 let entry_line (f: String): String = " - [${f}](./${f})\n"
 
@@ -75,15 +42,6 @@ let rebuild_readme (): Result[Unit, String] = {
 
 let pad5 (n: Int): String = String.pad_left(n.to_string(), 5, "0")
 
-// Characters a filename cannot portably hold. Zig walked the string
-// mutating bytes in place; a fold over the replacements says the same
-// thing without a mutable buffer.
-//
-// NOTE: this differs from the Zig original, which has a bug here. It
-// duplicated `name` into `safe_name` BEFORE the sanitising loop, then
-// mutated `name`, then built the filename from the untouched
-// `safe_name` -- so the sanitising never reached the output. Ported as
-// intended rather than as written.
 let sanitize (name: String): String =
     Array.fold(["/", "\\", ":", "*", "?", "\"", "<", ">", "|"], name,
         |acc, ch| String.replace(acc, ch, " "))
@@ -94,8 +52,6 @@ let generate_adr (n: Int) (name: String): Result[Unit, String] = {
         |> String.replace(_, "{{name}}", "${padded} - ${name}")
         |> Os.write_file("./adr/${padded}-${sanitize(name)}.md")
 }
-
-// --- Commands ---
 
 let report (r: Result[Unit, String]): Unit =
     match r { Ok(_) => (), Err(e) => println("adl: ${e}") }

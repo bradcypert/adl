@@ -33,7 +33,7 @@ jobs:
       # Bump it deliberately.
       - name: Install Plum
         env:
-          PLUM_VERSION: v0.0.10
+          PLUM_VERSION: v0.0.15
         run: |
           curl -fsSL https://raw.githubusercontent.com/bradcypert/plum/main/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -42,6 +42,13 @@ jobs:
         run: |
           plum version
           zig version
+
+      # Formatting is checked, not applied: a release build is the wrong
+      # place to rewrite source. `--check` lists what would move and
+      # exits non-zero, so drift fails the build instead of landing
+      # silently in a tag.
+      - name: Check formatting
+        run: plum fmt --check src
 
       # One runner, five targets, from one source tree. Triples are
       # passed through to the C driver, so these are clang/zig triples.
